@@ -3,6 +3,7 @@
 Способ b (hashmap): O(n), один проход, хранение в dict.
 
 HashMap выигрывает за счёт линейного времени
+"""
 
 def two_sum_brute_force(nums, target):
     n = len(nums)
