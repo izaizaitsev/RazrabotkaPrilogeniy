@@ -1,0 +1,327 @@
+openapi: 3.0.3
+info:
+  title: Homework Tracker API
+  version: 1.0.0
+  description: |
+    Трекер домашних заданий: учитель создаёт задания для класса,
+    редактирует и удаляет их, ученики и учитель смотрят список.
+
+    Авторизация — Bearer-токен.
+    * 401 — «не знаю, кто ты» (токена нет или он недействителен);
+    * 403 — «знаю, кто ты, но тебе нельзя» (например, ученик пытается удалить задание).
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Локальный запуск
+
+tags:
+  - name: homework
+    description: Домашние задания
+
+security:
+  - bearerAuth: []
+
+paths:
+  /homeworks:
+    get:
+      tags: [homework]
+      operationId: listHomeworks
+      summary: Список домашних заданий
+      description: Возвращает задания с фильтрацией по классу и статусу и постраничным выводом.
+      parameters:
+        - name: grade
+          in: query
+          description: Класс (номер параллели)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 11
+            example: 8
+        - name: status
+          in: query
+          description: Фильтр по статусу задания
+          required: false
+          schema:
+            $ref: '#/components/schemas/HomeworkStatus'
+        - name: page
+          in: query
+          description: Номер страницы (с 0)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          description: Размер страницы
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Список заданий
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [homework]
+      operationId: createHomework
+      summary: Создать домашнее задание
+      description: Доступно только учителю.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HomeworkCreateRequest'
+      responses:
+        '201':
+          description: Задание создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /homeworks/{homeworkId}:
+    parameters:
+      - name: homeworkId
+        in: path
+        description: Идентификатор задания
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 42
+    get:
+      tags: [homework]
+      operationId: getHomework
+      summary: Получить одно задание
+      responses:
+        '200':
+          description: Задание найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [homework]
+      operationId: updateHomework
+      summary: Частично изменить задание
+      description: Меняются только переданные поля. Доступно только учителю.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HomeworkUpdateRequest'
+      responses:
+        '200':
+          description: Задание обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [homework]
+      operationId: deleteHomework
+      summary: Удалить задание
+      description: Доступно только учителю.
+      responses:
+        '204':
+          description: Задание удалено, тело пустое
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос — не прошла валидация полей или параметров
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_ERROR
+            message: "Поле dueDate обязательно"
+    Unauthorized:
+      description: Не знаю, кто ты — токен не передан или недействителен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: "Требуется авторизация"
+    Forbidden:
+      description: Знаю, кто ты, но нельзя — у роли нет прав на действие (например, ученик)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: "Изменять задания может только учитель"
+    NotFound:
+      description: Задание с таким id не существует
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: "Задание 42 не найдено"
+
+  schemas:
+    HomeworkStatus:
+      type: string
+      description: Статус задания
+      enum: [ASSIGNED, CLOSED]
+
+    HomeworkCreateRequest:
+      type: object
+      description: DTO для создания задания (id, автор и даты ставит сервер)
+      required: [subject, grade, title, dueDate]
+      properties:
+        subject:
+          type: string
+          maxLength: 50
+          example: English
+        grade:
+          type: integer
+          minimum: 1
+          maximum: 11
+          example: 8
+        title:
+          type: string
+          maxLength: 120
+          example: "Bonfire Night: read the text, ex. 3 p. 45"
+        description:
+          type: string
+          maxLength: 2000
+          example: "Выписать 10 новых слов в словарь"
+        dueDate:
+          type: string
+          format: date
+          example: "2026-11-20"
+
+    HomeworkUpdateRequest:
+      type: object
+      description: DTO для частичного обновления — все поля необязательны
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        dueDate:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/HomeworkStatus'
+
+    HomeworkResponse:
+      type: object
+      description: |
+        DTO, который уходит клиенту. Внутренние поля сущности
+        (teacherId, флаги удаления, служебные метки БД) наружу не отдаются.
+      required: [id, subject, grade, title, dueDate, status, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        subject:
+          type: string
+          example: English
+        grade:
+          type: integer
+          example: 8
+        title:
+          type: string
+          example: "Bonfire Night: read the text, ex. 3 p. 45"
+        description:
+          type: string
+          example: "Выписать 10 новых слов в словарь"
+        dueDate:
+          type: string
+          format: date
+          example: "2026-11-20"
+        status:
+          $ref: '#/components/schemas/HomeworkStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-11-14T09:00:00Z"
+
+    HomeworkPage:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HomeworkResponse'
+        page:
+          type: integer
+          example: 0
+        size:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          format: int64
+          example: 1
+
+    Error:
+      type: object
+      description: Единый формат ошибки
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: NOT_FOUND
+        message:
+          type: string
+          example: "Задание 42 не найдено"
